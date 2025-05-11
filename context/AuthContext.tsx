@@ -1,64 +1,69 @@
 'use client';
 import { createContext, useContext, useEffect, useState } from 'react';
-import { onAuthStateChanged, getAuth } from 'firebase/auth';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 import { supabase } from '../lib/supabase';
 
 const AuthContext = createContext(null);
 
-export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [role, setRole] = useState(null);
-  const [tier, setTier] = useState(null);
 
   useEffect(() => {
     const checkSession = async () => {
-      const params = new URLSearchParams(window.location.search);
-      const paymentSuccess = params.get('success') === 'true';
+      const firebaseUser = auth.currentUser;
+      if (!firebaseUser) return;
 
-      if (auth.currentUser) {
-        setUser(auth.currentUser);
-        console.log('Firebase UID:', auth.currentUser.uid);
+      setUser(firebaseUser);
+      console.log('🔥 Firebase UID:', firebaseUser.uid);
 
-        const { data: userMeta, error: userError } = await supabase
-          .from('users')
-          .select('id, role')
-          .eq('firebase_uid', auth.currentUser.uid)
-          .single();
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, role')
+        .eq('firebase_uid', firebaseUser.uid)
+        .maybeSingle();
 
-        if (userError) console.error('❌ Supabase user error:', userError);
-        if (userMeta) {
-          console.log('✅ User Meta:', userMeta);
-          setRole(userMeta.role);
-
-          const { data: subscription, error: subError } = await supabase
-            .from('subscriptions')
-            .select('tier')
-            .eq('user_id', userMeta.id)
-            .eq('status', 'active')
-            .single();
-
-          if (subError) console.error('❌ Subscription fetch error:', subError);
-          console.log('✅ Subscription:', subscription);
-          setTier(subscription?.tier || null);
-        }
+      if (error) {
+        console.error('Supabase fetch error:', error.message);
+        return;
       }
 
-      if (paymentSuccess) {
-        const cleanUrl = window.location.origin + window.location.pathname;
-        window.history.replaceState({}, document.title, cleanUrl);
+      if (!data) {
+        const { error: insertErr } = await supabase.from('users').insert({
+          email: firebaseUser.email,
+          firebase_uid: firebaseUser.uid,
+          role: 'user',
+        });
+        if (insertErr) {
+          console.error('❌ Insert error:', insertErr.message);
+          return;
+        }
+        setRole('user');
+      } else {
+        setRole(data.role);
       }
     };
 
-    const unsubscribe = onAuthStateChanged(auth, () => {
-      checkSession();
+    const unsub = onAuthStateChanged(auth, (firebaseUser) => {
+      if (firebaseUser) checkSession();
+      else {
+        setUser(null);
+        setRole(null);
+      }
     });
 
-    return () => unsubscribe();
+    return () => unsub();
   }, []);
 
+  const signOutUser = async () => {
+    await signOut(auth);
+    setUser(null);
+    setRole(null);
+  };
+
   return (
-    <AuthContext.Provider value={{ user, role, tier }}>
+    <AuthContext.Provider value={{ user, role, signOutUser }}>
       {children}
     </AuthContext.Provider>
   );

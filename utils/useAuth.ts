@@ -35,7 +35,10 @@ export function useAuth() {
     return () => unsub();
   }, []);
 
-  const login = () => signInWithPopup(auth, provider);
+  const login = () => {
+    provider.setCustomParameters({ prompt: 'select_account' });
+    return signInWithPopup(auth, provider);
+  };
   const logout = () => signOut(auth);
 
   return { user, role, login, logout };

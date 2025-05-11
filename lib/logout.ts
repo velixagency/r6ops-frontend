@@ -1,8 +1,9 @@
 // lib/logout.ts
-import { getAuth, signOut } from 'firebase/auth';
+import { signOut, setPersistence, browserLocalPersistence } from 'firebase/auth';
+import { auth } from '../lib/firebase';
 
-export async function logout() {
-  const auth = getAuth();
+export const logout = async () => {
   await signOut(auth);
-  window.location.href = '/';
-}
+  // Clear any existing persistence to force re-prompt
+  await setPersistence(auth, browserLocalPersistence);
+};
